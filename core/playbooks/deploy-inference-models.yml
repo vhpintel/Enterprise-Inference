@@ -31,6 +31,7 @@
           - "Models to Deploy: {{ model_name_list }}"
       tags: always
       run_once: true
+      when: balloon_policy_cpu == "enabled"
 
     - name: Set default model parallelism configuration for CPU deployments
       ansible.builtin.set_fact:
@@ -81,7 +82,7 @@
               }
           tags: always
     - name: CPU Topology Detection and Optimization (for CPU deployments only)
-      when: cpu_playbook == 'true'
+      when: cpu_playbook == 'true' and balloon_policy_cpu == "enabled"
       run_once: true
       tags: always
       block:
@@ -1483,6 +1484,24 @@
         - uninstall_true == 'true'
         - helm_release_installed.stdout != ""
 
+    
+    - name: CPU/Memory values when balloon policy
+      ansible.builtin.replace:
+        path: "{{ remote_helm_charts_base }}/vllm/values.yaml"
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      loop:        
+        - { regexp: '^cpu:\s*".*"', replace: '# cpu: "8"  # Commented - balloon policy disabled' }
+        - { regexp: '^memory:\s*".*"', replace: '# memory: "8Gi"  # Commented - balloon policy disabled' }        
+        - { regexp: '(\s+)cpu:\s*"\{\{\s*\.Values\.cpu\s*\}\}"', replace: '\1# cpu: "8"  # Commented - balloon policy disabled' }
+        - { regexp: '(\s+)memory:\s*"\{\{\s*\.Values\.memory\s*\}\}"', replace: '\1# memory: "8Gi"  # Commented - balloon policy disabled' }
+      when: 
+        - cpu_playbook == 'true' 
+        - balloon_policy_cpu != "enabled"
+      tags: always
+      run_once: true
+    
+    
     - name: Deploy CPU based LLM model  llama 8b
       block:
         - name: Delete Ingress resource Llama8b from default namespace
@@ -1639,6 +1658,21 @@
         - install_true == 'true'
         - "'cpu-deepseek-r1-distill-qwen-32b' in (model_name_list | regex_replace(',', ' ') | split())"
 
+    - name: CPU/Memory values after deployment
+      ansible.builtin.replace:
+        path: "{{ remote_helm_charts_base }}/vllm/values.yaml"
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      loop:
+        - { regexp: '^# cpu:\s*".*"\s*# Commented - balloon policy disabled', replace: 'cpu: "8"' }
+        - { regexp: '^# memory:\s*".*"\s*# Commented - balloon policy disabled', replace: 'memory: "8Gi"' }
+      when: 
+        - cpu_playbook == 'true' 
+        - balloon_policy_cpu != "enabled"
+      ignore_errors: yes
+      tags: always
+      run_once: true
+    
     - name: Check if CPU Deepseek R1 Distill Llama 8B is installed
       ansible.builtin.command:
         cmd: "helm list --filter vllm-deepseek-r1-llama-8b-cpu --short"

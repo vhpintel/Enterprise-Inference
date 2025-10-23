@@ -11,7 +11,7 @@ The access clients are summarized in the table. To quickly verify the models are
 
 ### Accessing Models from curl Client
 To configure your environment with the necessary variables for connecting to Keycloak, you will need to set the following environment variables.  
-Please replace the placeholder values with your actual configuration details, which has been configured in `inference-config.cfg` file under the `core/` directory during deployment.
+Please replace the placeholder values with your actual configuration details, which has been configured in `inference-config.cfg` file under the `core/inventory/` directory during deployment.
 
 
 
@@ -39,22 +39,6 @@ langfuse_password corresponds to langfuse password
 > **Note:**  
 > To enable tracing and monitoring via GenAI Gateway Trace, ensure you have configured a subdomain named `trace.<cluster_url>` that points to the same master node as your main inference cluster. This subdomain is required for GenAI Gateway Trace to function correctly and should be set up in your DNS records before 
 proceeding.
-
-##### Models Endpoints
-```bash
-curl --location 'https://<<cluster-url>>/v1/chat/completions' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer <<master-key>>' \
---data '{
-    "model": "meta-llama/Llama-3.1-8B-Instruct",
-    "messages": [
-        {
-            "role": "user",
-            "content": "Hello!"
-        }
-    ]
-}'
-```
 
 #### Creating TLS Certificates and Kubernetes Secret for GenAI Gateway Trace Subdomain
 
@@ -93,8 +77,6 @@ Update your Kubernetes Ingress or Gateway manifest to reference the `genai-trace
 
 > **Note:**  
 > For production, use certificates from a trusted Certificate Authority (CA) instead of self-signed certificates.
----
-
 
 ##### Models Endpoints
 Please find the reference Model endpoint for llama8b
@@ -115,7 +97,7 @@ curl --location 'https://<<cluster-url>>/v1/chat/completions' \
 
 
 
-
+---
 
 #### Accessing Models Deployed with Keycloak and APISIX
 

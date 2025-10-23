@@ -1,0 +1,82 @@
+name: Coverity Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      PR_number:
+        description: 'Pull request number'
+        required: true
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  coverity-scan:
+    name: Coverity scans
+    runs-on: [innersource.prod.amr.dind]
+    container: cache-registry.caas.intel.com/cache/library/python:3.11
+    environment: d3
+    steps:
+    - uses: intel-innersource/frameworks.actions.certs@latest
+    
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        fetch-depth: 0
+        path: repo
+    
+    - name: Fetch secrets from Conjur
+      uses: intel-innersource/frameworks.actions.conjur-fetch@v1.0.0
+      with:
+        host_id: host/github-apps-oidc/45019-hostgithubappsoidc45019r
+        secrets: >
+          FMSPAMVLT101/LOBUSER_prapp/AAM-DV-45019-DCAISCAN/Operating System-WindowsDomainAccounts-amr.corp.intel.com-sys_dcai_iaas/password|RAG_COVERITY_PASSWORD;
+          FMSPAMVLT101/LOBUSER_prapp/AAM-DV-45019-DCAISCAN/Operating System-WindowsDomainAccounts-amr.corp.intel.com-sys_dcai_iaas/username|RAG_COVERITY_USER
+
+    - name: Set up Coverity
+      uses: intel-innersource/frameworks.actions.setup-coverity@v4
+      with:
+        analysis-version: 2024.6.1
+        reports-version: 2024.6.1
+
+    - name: Check Coverity version
+      run: coverity --version
+      shell: bash
+
+    - name: Run Coverity scan
+      id: run_coverity
+      uses: intel-innersource/frameworks.actions.coverity-analysis@v4
+      continue-on-error: true
+      with:
+        source: repo
+        fail-if-issues-found: false
+        url: https://coverity.devtools.intel.com/prod15
+        project: DCAI-IaaS
+        stream: DCAI-IaaS
+        user: ${{ env.RAG_COVERITY_USER }}
+        password: ${{ env.RAG_COVERITY_PASSWORD }}
+        commit-defects: true
+        analyze-options: --enable-default --security --webapp-security --enable-audit-checkers --disable sigma.container_requesting_net_raw --disable sigma.container_running_as_root --disable sigma.container_sharing_host_network_namespace
+        compiler-type: python
+        format-errors-options: --file-not-regex '.*habana-metrics\.yml.*'
+        
+    - name: Check for Coverity scan status
+      if: steps.run_coverity.outcome != 'success'
+      run: |
+        echo "Exiting job because the Coverity scan failed."
+        exit 1
+      shell: bash
+
+    - name: Collect Coverity reports
+      uses: intel-innersource/frameworks.actions.coverity-analysis/sdl-reports@v4
+      with:
+        url: https://coverity.devtools.intel.com/prod15
+        project: DCAI-IaaS
+        project-version: 1.1.0
+        user: ${{ env.RAG_COVERITY_USER }}
+        password: ${{ env.RAG_COVERITY_PASSWORD }}
+        snapshot: ${{steps.run_coverity.outputs.snapshot}}
+        artifact-name: SDL reports for python - Coverity snapshot ${{steps.run_coverity.outputs.snapshot}}

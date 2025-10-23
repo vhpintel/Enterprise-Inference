@@ -1,0 +1,405 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to validate (defaults to current branch)'
+        required: false
+        default: ''
+      skip_secrets_validation:
+        description: 'Skip secrets validation step'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  validation:
+    runs-on: inference-xeon
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.branch || github.event.pull_request.head.sha || github.sha }}
+        fetch-depth: 0
+
+    - name: Debug checkout location
+      run: |
+        echo "=== CHECKOUT LOCATION DEBUG ==="
+        echo "1. Environment Variables:"
+        echo "   GITHUB_WORKSPACE: ${GITHUB_WORKSPACE:-'NOT SET'}"
+        echo "   GITHUB_ACTIONS: ${GITHUB_ACTIONS:-'NOT SET'}"
+        echo "   RUNNER_WORKSPACE: ${RUNNER_WORKSPACE:-'NOT SET'}"
+        echo "   HOME: $HOME"
+        echo ""
+        echo "2. Current Working Directory:"
+        echo "   PWD: $(pwd)"
+        echo ""
+        echo "3. Contents of current directory ($(pwd)):"
+        ls -la .
+        echo ""
+        echo "4. Looking for .github directory in various locations:"
+        find /home -name ".github" -type d 2>/dev/null | head -10
+        echo ""
+        echo "5. Looking for deployment_validation.sh script:"
+        find /home -name "deployment_validation.sh" -type f 2>/dev/null | head -5
+        echo ""
+        echo "6. Runner process information:"
+        ps aux | grep -E "(runner|actions)" | grep -v grep | head -5
+        echo ""
+        echo "7. File tree from current directory (max 3 levels):"
+        tree -L 3 . 2>/dev/null || find . -maxdepth 3 -type d | head -20
+        echo "=== END CHECKOUT DEBUG ==="
+
+    - name: Verify checkout and branch info
+      run: |
+        echo "=== Git Repository Information ==="
+        echo "Current working directory: $(pwd)"
+        echo "GITHUB_WORKSPACE: ${GITHUB_WORKSPACE:-'NOT SET'}"
+        echo "Contents of current directory:"
+        ls -la
+        echo "Contents of GITHUB_WORKSPACE (if set):"
+        if [ -n "$GITHUB_WORKSPACE" ] && [ -d "$GITHUB_WORKSPACE" ]; then
+          ls -la "$GITHUB_WORKSPACE"
+        else
+          echo "GITHUB_WORKSPACE not set or directory doesn't exist"
+        fi
+        CURRENT_BRANCH=$(git branch --show-current)
+        CURRENT_COMMIT=$(git rev-parse HEAD)
+        COMMIT_MESSAGE=$(git log -1 --pretty=format:'%s')
+        
+        # Only show branch info if we have a branch name or are in a PR
+        if [ -n "$CURRENT_BRANCH" ]; then
+          echo "Current branch: $CURRENT_BRANCH"
+        elif [ "${{ github.event_name }}" = "pull_request" ]; then
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "PR branch: $BRANCH_NAME (detached HEAD)"
+        fi
+        
+        echo "Current commit: $CURRENT_COMMIT"
+        echo "Current commit message: $COMMIT_MESSAGE"
+        echo "Recent commits:"
+        git log --oneline -5
+        echo "Git status:"
+        git status
+        echo "=================================="
+
+    - name: Set up environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq ansible openssl netcat-openbsd
+
+    - name: Display workflow trigger info
+      run: |
+        echo "=== Workflow Trigger Information ==="
+        echo "Event name: ${{ github.event_name }}"
+        echo "Triggered by: ${{ github.actor }}"
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "Manual trigger - Branch input: ${{ inputs.branch || 'not provided' }}"
+          echo "Manual trigger - Skip secrets validation: ${{ inputs.skip_secrets_validation }}"
+        fi
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "PR number: ${{ github.event.pull_request.number }}"
+          echo "PR head SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "PR head ref: ${{ github.event.pull_request.head.ref }}"
+          echo "PR base SHA: ${{ github.event.pull_request.base.sha }}"
+          echo "PR base ref: ${{ github.event.pull_request.base.ref }}"
+        fi
+        echo "GitHub ref: ${{ github.ref }}"
+        echo "GitHub ref name: ${{ github.ref_name }}"
+        echo "GitHub SHA: ${{ github.sha }}"
+        echo "Checkout ref used: ${{ inputs.branch || github.event.pull_request.head.sha || github.sha }}"
+        echo "===================================="
+
+    - name: Validate required secrets
+      if: ${{ !inputs.skip_secrets_validation }}
+      run: |
+        if [ -z "${{ secrets.HUGGING_FACE_TOKEN }}" ]; then
+          echo "Error: HUGGING_FACE_TOKEN secret is not set"
+          exit 1
+        fi
+        echo "All required secrets and variables are configured"
+
+    - name: Setup SSH private key
+      run: |
+        # Create SSH directory
+        mkdir -p ~/.ssh
+
+        # Check if SSH key pair already exists
+        if [ -f ~/.ssh/id_rsa.pub ] && [ -f ~/.ssh/id_rsa ]; then
+          echo "SSH key pair already exists"
+          echo "Using existing SSH key pair"
+          echo "Existing public key:"
+          cat ~/.ssh/id_rsa.pub
+        else
+          echo "SSH key pair not found, generating new SSH key pair"
+
+          # Generate new SSH key pair
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -C "github-actions@runner"
+          chmod 600 ~/.ssh/id_rsa
+          chmod 644 ~/.ssh/id_rsa.pub
+
+          echo "SSH key pair generated successfully"
+          echo "Generated public key:"
+          cat ~/.ssh/id_rsa.pub
+        fi
+
+    - name: Run validation
+      id: validation
+      continue-on-error: true
+      run: |
+        echo "Starting validation process..."
+        
+        # Verify we're on the correct branch/commit before validation
+        echo "=== Pre-validation Git State ==="
+        CURRENT_COMMIT=$(git rev-parse HEAD)
+        CURRENT_BRANCH=$(git branch --show-current)
+        echo "Current commit: $CURRENT_COMMIT"
+        echo "Expected commit (from trigger): ${{ inputs.branch || github.event.pull_request.head.sha || github.sha }}"
+        echo "Current branch: ${CURRENT_BRANCH:-'(detached HEAD)'}"
+        echo "Working directory: $(pwd)"
+        echo "================================="
+
+        # Set up signal handlers for the workflow step
+        cleanup_workflow() {
+          echo "Workflow step interrupted, performing cleanup..."
+          # Kill any remaining processes from the validation
+          pkill -f "deployment_validation.sh" || true
+          pkill -f "ansible-playbook" || true
+          # Add other cleanup as needed
+          exit 1
+        }
+
+        trap cleanup_workflow INT TERM
+
+        # Verify the script exists
+        if [ ! -f ".github/scripts/deployment_validation.sh" ]; then
+          echo "Error: .github/scripts/deployment_validation.sh not found"
+          ls -la .github/scripts/
+          VALIDATION_EXIT_CODE=1
+        else
+          # Run the deployment validation script directly with command line arguments
+          chmod +x .github/scripts/deployment_validation.sh
+
+          # Run the deployment validation script directly with command line arguments
+          ./.github/scripts/deployment_validation.sh "${{ secrets.HUGGING_FACE_TOKEN }}" 2>&1 | tee validation.log
+          VALIDATION_EXIT_CODE=${PIPESTATUS[0]}
+        fi
+
+        echo "Validation completed with exit code: $VALIDATION_EXIT_CODE"
+        echo "validation_exit_code=$VALIDATION_EXIT_CODE" >> $GITHUB_OUTPUT
+
+    - name: Prepare logs for upload
+      if: always()
+      run: |
+        # Create logs directory and organize log files
+        mkdir -p logs
+
+        # Copy validation log if it exists
+        if [ -f validation.log ]; then
+          cp validation.log logs/
+          echo "Copied validation.log"
+        else
+          echo "WARNING: validation.log not found"
+        fi
+
+        # Copy deployment validation logs if they exist
+        if ls ${{ env.HOME }}/deployment_validation_*.log 1> /dev/null 2>&1; then
+          cp ${{ env.HOME }}/deployment_validation_*.log logs/
+          echo "Copied deployment validation logs"
+        else
+          echo "WARNING: No deployment validation logs found"
+        fi
+
+        # Create a summary file with metadata
+        cat > logs/validation_summary.txt << EOF
+        Validation Summary
+        ==================
+        Workflow Run: ${{ github.run_id }}
+        Run Number: ${{ github.run_number }}
+        Commit SHA: ${{ github.sha }}
+        Branch: ${{ github.ref_name }}
+        Actor: ${{ github.actor }}
+        Event: ${{ github.event_name }}
+        Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        Exit Code: ${{ steps.validation.outputs.validation_exit_code }}
+
+        Log Files Collected:
+        EOF
+        ls -la logs/ >> logs/validation_summary.txt
+
+        # List contents of logs directory for verification
+        echo "Log files prepared for upload:"
+        ls -la logs/
+
+    - name: Upload validation logs
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: validation-logs-${{ github.event.pull_request.number || github.run_number }}
+        path: logs/
+        retention-days: 30
+
+    - name: Debug validation outputs
+      if: always()
+      run: |
+        echo "Validation step outputs:"
+        echo "validation_exit_code: '${{ steps.validation.outputs.validation_exit_code }}'"
+        echo "github.sha: '${{ github.sha }}'"
+        echo "github.event_name: '${{ github.event_name }}'"
+
+    - name: Check GitHub token permissions
+      uses: actions/github-script@v7
+      if: always()
+      with:
+        script: |
+          try {
+            const repo = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            console.log('Repository access: OK');
+            console.log('Repository full name:', repo.data.full_name);
+          } catch (error) {
+            console.log('Repository access error:', error.message);
+          }
+
+    - name: Check validation results
+      run: |
+        if [ "${{ steps.validation.outputs.validation_exit_code }}" != "0" ]; then
+          echo "Validation failed with exit code ${{ steps.validation.outputs.validation_exit_code }}"
+          echo "Please check the validation logs for details."
+          exit 1
+        else
+          echo "Validation completed successfully"
+        fi
+
+    - name: Comment on PR
+      uses: actions/github-script@v7
+      if: always() && github.event.pull_request
+      with:
+        script: |
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+          });
+
+          const botComment = comments.find(comment =>
+            comment.user.type === 'Bot' &&
+            comment.body.includes('Validation Results')
+          );
+
+          const validationSuccess = '${{ steps.validation.outputs.validation_exit_code }}' === '0';
+          const status = validationSuccess ? 'PASSED' : 'FAILED';
+
+          const body = `**Validation Results**
+
+          **Status:** ${status}
+          **Commit:** \`${{ github.event.pull_request.head.sha }}\`
+          **Validation Exit Code:** ${{ steps.validation.outputs.validation_exit_code }}
+
+          ${validationSuccess ?
+            '**All validation checks passed!** Your changes are ready for review.' :
+            '**Validation failed.** Please check the [workflow logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) and validation artifacts for details.'
+          }
+
+          **Validation logs** are available as workflow artifacts for 30 days.
+
+          ---
+          *This comment was automatically generated by the PR validation workflow.*`;
+
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: body
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: body
+            });
+          }
+
+    - name: Set commit status
+      uses: actions/github-script@v7
+      if: always() && github.event.pull_request
+      with:
+        script: |
+          const validationSuccess = '${{ steps.validation.outputs.validation_exit_code }}' === '0';
+          await github.rest.repos.createCommitStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            sha: '${{ github.event.pull_request.head.sha }}',
+            state: validationSuccess ? 'success' : 'failure',
+            context: 'Validation',
+            description: validationSuccess ? 'All validation checks passed' : 'Validation checks failed'
+          });
+
+    - name: Set commit status for push
+      uses: actions/github-script@v7
+      if: always() && github.event_name == 'push'
+      with:
+        script: |
+          const validationExitCode = '${{ steps.validation.outputs.validation_exit_code }}';
+          const sha = '${{ github.sha }}';
+
+          console.log('Validation exit code:', validationExitCode);
+          console.log('SHA:', sha);
+          console.log('Repository:', context.repo.owner + '/' + context.repo.repo);
+
+          if (!validationExitCode) {
+            console.log('Warning: validation_exit_code is empty, defaulting to failure');
+          }
+
+          if (!sha) {
+            console.log('Error: SHA is empty, cannot set commit status');
+            return;
+          }
+
+          const validationSuccess = validationExitCode === '0';
+
+          try {
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: sha,
+              state: validationSuccess ? 'success' : 'failure',
+              context: 'Validation',
+              description: validationSuccess ? 'All validation checks passed' : `Validation checks failed (exit code: ${validationExitCode || 'unknown'})`
+            });
+            console.log('Commit status set successfully');
+          } catch (error) {
+            console.log('Error setting commit status:', error.message);
+            console.log('This might be due to insufficient permissions or the repository not being found');
+          }
+
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "Starting workflow cleanup..."
+
+        # Clean up any remaining processes
+        echo "Terminating any remaining validation processes..."
+        pkill -f "deployment_validation.sh" || true
+        pkill -f "ansible-playbook" || true
+        pkill -f "quick-sanity.sh" || true
+
+        # Clean up SSH keys
+        rm -f ~/.ssh/id_rsa
+
+        # Clean up any temporary files that might have been created
+        rm -f /tmp/validation_* || true
+
+        # Show final process state
+        echo "Remaining processes:"
+        ps aux | grep -E "(validation|ansible|deployment)" | grep -v grep || echo "No validation-related processes found"
+
+        echo "Workflow cleanup completed"

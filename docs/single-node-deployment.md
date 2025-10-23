@@ -24,14 +24,21 @@ Add this line at the end:
 Save and exit (`CTRL+X`, then `Y` and `Enter`).
 
 ### Step 2: Generate a self-signed SSL certificate
-Run the following commands to create a self-signed SSL certificate:
+Run the following command to create a self-signed SSL certificate that covers api.example.com and trace-api.example.com:
+```bash
+mkdir -p ~/certs && cd ~/certs && \
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes \
+  -subj "/CN=api.example.com" \
+  -addext "subjectAltName = DNS:api.example.com, DNS:trace-api.example.com"
 ```
-mkdir -p ~/certs && cd ~/certs
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=api.example.com"
-```
-This generates:
-- `cert.pem`: The self-signed certificate.
-- `key.pem`: The private key.
+Note: the -addext option requires OpenSSL >= 1.1.1.
+
+Files produced:
+- cert.pem — the self-signed certificate (contains SANs)
+- key.pem — the private key
+
+Important DNS step:
+Please add trace-api.example.com to DNS and point it to the node where Ingress controller is deployed.
 
 ### Step 3: Configure the Automation config file
 Move the single node preset inference config file to the runnig directory
@@ -40,7 +47,7 @@ Move the single node preset inference config file to the runnig directory
 cd ~
 git clone https://github.com/opea-project/Enterprise-Inference.git
 cd Enterprise-Inference
-cp -f docs/examples/single-node/inference-config.cfg core/inference-config.cfg
+cp -f docs/examples/single-node/inference-config.cfg core/inventory/inference-config.cfg
 ```
 
 ### Step 4: Update `hosts.yaml` File
