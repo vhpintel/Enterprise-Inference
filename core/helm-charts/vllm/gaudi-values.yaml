@@ -262,7 +262,7 @@ modelConfigs:
       VLLM_PROMPT_USE_FUSEDSDPA: 1
       VLLM_SKIP_WARMUP: false
       PT_HPU_RECIPE_CACHE_CONFIG: "/data/recipe_cache,false,2048"
-    extraCmdArgs: ["--block-size","128","--dtype","bfloat16","--max-model-len","33024","--gpu-memory-util","0.98","--max-num-seqs","448","--max-num-prefill-seqs","16","--num_scheduler_steps","1","--use-padding-aware-scheduling", "--tool-call-parser","llama3_json","--chat-template","/workspace/vllm/examples/tool_chat_template_llama3.1_json.jinja", "--enable-auto-tool-choice", "--disable-log-requests"]
+    extraCmdArgs: ["--block-size","128","--dtype","bfloat16","--max-model-len","33024","--gpu-memory-util","0.98","--max-num-seqs","448","--max-num-prefill-seqs","16","--num_scheduler_steps","1","--use-padding-aware-scheduling", "--tool-call-parser","llama4_json","--chat-template","/workspace/vllm/examples/tool_chat_template_llama4_json.jinja", "--enable-auto-tool-choice", "--disable-log-requests"]
     tensor_parallel_size: "4"
 
   # mistralai/Mistral-7B-Instruct-v0.1

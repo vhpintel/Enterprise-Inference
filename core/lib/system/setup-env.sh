@@ -95,6 +95,7 @@ setup_initial_env() {
     cp "$HOMEDIR"/playbooks/* "$KUBESPRAYDIR"/playbooks/    
     gaudi2_values_file_path="$REMOTEDIR/vllm/gaudi-values.yaml"
     gaudi3_values_file_path="$REMOTEDIR/vllm/gaudi3-values.yaml"
+    xeon_values_file_path="$REMOTEDIR/vllm/xeon-values.yaml"
     cp "$HOMEDIR"/inventory/metadata/addons.yml $KUBESPRAYDIR/inventory/mycluster/group_vars/k8s_cluster/addons.yml
     cp "$HOMEDIR"/inventory/metadata/all.yml $KUBESPRAYDIR/inventory/mycluster/group_vars/all/all.yml
     cp -r "$HOMEDIR"/roles/* $KUBESPRAYDIR/roles/        

@@ -88,7 +88,9 @@ prompt_for_input() {
         # Automatically enable NRI balloon policy for CPU deployments
         if [ "$cpu_or_gpu" == "c" ]; then
             deploy_nri_balloon_policy="yes"
-            echo "NRI CPU Balloon Policy automatically enabled for CPU deployment"
+            if [ "$balloon_policy_cpu" == "enabled" ]; then
+                echo "NRI CPU Balloon Policy automatically enabled for CPU deployment"
+            fi            
         else
             deploy_nri_balloon_policy="no"
             echo "NRI CPU Balloon Policy disabled for GPU deployment"
