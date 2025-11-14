@@ -13,7 +13,7 @@
 
 ### Additional Requirements
 
-- **Hugging Face Model Access**: `casperhansen/llama-3-8b-instruct-awq`
+- **Hugging Face Model Access**: `casperhansen/llama-3-8b-instruct-awq` or `meta-llama/Llama-3.1-8B-Instruct`
 - **SSL/TLS Certificate**: Obtain from a trusted Certificate Authority (CA)
 - **Domain Configuration**: Registered domain with DNS records pointing to your production server or load balancer
 
@@ -55,6 +55,7 @@
    - Select Option 1
    - Confirm the Yes/No prompt
    - The Enterprise-Inference cluster will deploy automatically
+   - After deployment you will see the vllm-llama-8b-cpu pod up and running.
 
 ---
 
@@ -125,8 +126,12 @@
      -p='[{"op": "replace", "path": "/data/assign_cores.sh", "value": "#!/bin/bash\n# Copyright (C) 2025 Intel Corporation\n# SPDX-License-Identifier: Apache-2.0\n\necho \"CPU core binding disabled for compatibility\"\nreturn 0\n"}]'
    
    kubectl delete pod vllm-service-m-deployment-0 -n chatqa
-   ```
 
+   kubectl patch deployment llm-svc-deployment -n chatqa --type=json -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/env/2/value", "value": "http://vllm-llama-8b-cpu-service.default.svc:80"}]'
+   kubectl patch deployment llm-svc-deployment -n chatqa --type=json -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/env/3/value", "value": "meta-llama/Llama-3.1-8B-Instruct"}]'
+
+   ```
+   Once the pods are restarting. Any prompt from RAG UI will use the vLLM model which was deployed using Enterprise Inference - meta-llama/Llama-3.1-8B-Instruct
 ---
 
 ## Testing the Deployment
@@ -164,7 +169,7 @@ Once deployment is complete, access the following services through your web brow
 | **Keycloak** | `https://auth.erag.com` |
 | **Grafana** | `https://grafana.erag.com` |
 | **MinIO Console** | `https://minio.erag.com` |
-
+| **Litellm Console** | `https://erag.com/ui` |
 ---
 
 ## Support
