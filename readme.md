@@ -36,7 +36,7 @@
    ```
    
    Update `inference-config.cfg` with your values:
-   - Copy `inference-config.cfg` to `inventory/inference-cluster/` (refer to sample: `./inference-config.cfg`)
+   - Copy `inference-config.cfg` to `inventory/inference-cluster/` (refer to: [inference-config.cfg](./inference-config.cfg))
    - Set `cluster_url` field to your DNS name
    - Ensure paths to certificate and key files are valid
 
