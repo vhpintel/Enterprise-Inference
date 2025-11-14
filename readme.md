@@ -83,8 +83,8 @@
    ```
 
 4. **Edit configuration files**:
-   - Copy `config.yaml` to `inventory/inference-cluster/` (refer to sample: `./config.yaml`)
-   - Copy `inventory.ini` to `inventory/inference-cluster/` (refer to sample: `./inventory.ini`)
+   - Copy `config.yaml` from the root directory to `inventory/inference-cluster/` (refer to: [config.yaml](./config.yaml))
+   - Copy `inventory.ini` from the root directory to `inventory/inference-cluster/` (refer to: [inventory.ini](./inventory.ini))
    - Update the FQDN and domains
 
 5. **Validate hardware and configuration**:
