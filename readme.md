@@ -129,6 +129,8 @@
 
    kubectl patch deployment llm-svc-deployment -n chatqa --type=json -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/env/2/value", "value": "http://vllm-llama-8b-cpu-service.default.svc:80"}]'
    kubectl patch deployment llm-svc-deployment -n chatqa --type=json -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/env/3/value", "value": "meta-llama/Llama-3.1-8B-Instruct"}]'
+   kubectl patch deployment llm-svc-deployment -n chatqa --type=json -p='[{"op": "replace", "path": "/spec/template/spec/initContainers/0/env/1/value", "value": "http://vllm-llama-8b-cpu-service.default.svc:80"}]'
+   kubectl patch deployment llm-svc-deployment -n chatqa --type=json -p='[{"op": "replace", "path": "/spec/template/spec/initContainers/0/env/2/value", "value": "meta-llama/Llama-3.1-8B-Instruct"}]'
 
    ```
    Once the pods are restarting. Any prompt from RAG UI will use the vLLM model which was deployed using Enterprise Inference - meta-llama/Llama-3.1-8B-Instruct
