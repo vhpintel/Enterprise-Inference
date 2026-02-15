@@ -12,8 +12,12 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: sdle-${{ github.event.pull_request.number || github.ref }}
+  group: sdle-${{ github.event.inputs.PR_number || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
 
@@ -25,37 +29,32 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.PR_number && format('refs/pull/{0}/merge', github.event.inputs.PR_number) || '' }}
       
       - name: Create report directory
         run: mkdir -p trivy-reports
       
-      - name: Install Trivy
-        run: |
-          # Check if trivy is already installed
-          if ! command -v trivy &> /dev/null; then
-            wget -qO- https://github.com/aquasecurity/trivy/releases/download/v0.55.0/trivy_0.55.0_Linux-64bit.tar.gz | tar -xzv -C /tmp
-            sudo mv /tmp/trivy /usr/local/bin/
-          fi
-          trivy --version
-        
       - name: Run Trivy FS Scan
+        uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
-        run: |
-          trivy fs . \
-            --scanners vuln,misconfig,secret \
-            --severity CRITICAL,HIGH \
-            --format table \
-            --output trivy-reports/trivy_scan_report.txt
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          scanners: 'vuln,misconfig,secret'
+          severity: 'CRITICAL,HIGH'
+          format: 'table'
+          output: 'trivy-reports/trivy_scan_report.txt'
             
       - name: Run Trivy Image Scan - vllm-cpu
+        uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
-        run: |
-          trivy image \
-            --severity HIGH,CRITICAL \
-            --format table \
-            --output trivy-reports/trivy-vllm-cpu.txt \
-            public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.10.2 || \
-          echo "Image scan skipped - image not available locally" > trivy-reports/trivy-vllm-cpu.txt
+        with:
+          scan-type: 'image'
+          image-ref: 'public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.10.2'
+          severity: 'HIGH,CRITICAL'
+          format: 'table'
+          output: 'trivy-reports/trivy-vllm-cpu.txt'
 
       - name: Upload Trivy Reports
         if: always()
@@ -81,6 +80,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
+        ref: ${{ github.event.inputs.PR_number && format('refs/pull/{0}/merge', github.event.inputs.PR_number) || '' }}
         submodules: 'recursive'
         fetch-depth: 0
     - uses: actions/setup-python@v5
@@ -112,10 +112,10 @@ jobs:
   shellcheck_scan:
     name: ShellCheck script analysis
     runs-on: self-hosted
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.PR_number && format('refs/pull/{0}/merge', github.event.inputs.PR_number) || '' }}
 
       - name: Create report directory
         run: mkdir -p shellcheck-reports
